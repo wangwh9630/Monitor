@@ -5,7 +5,13 @@ import com.aliyuncs.CommonResponse;
 import com.aliyuncs.IAcsClient;
 import com.aliyuncs.exceptions.ClientException;
 import com.aliyuncs.http.MethodType;
+import com.example.phone.entity.CallRecord;
+import com.example.phone.service.CallRecordService;
+import com.example.phone.service.PhoneNumberService;
+import com.example.phone.service.TtsTemplateService;
 import com.google.gson.Gson;
+import com.google.gson.JsonObject;
+import com.google.gson.JsonParser;
 import lombok.Data;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -17,12 +23,10 @@ import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.server.ResponseStatusException;
 
-import java.util.Arrays;
 import java.util.List;
 import java.util.Objects;
 import java.util.concurrent.Semaphore;
 import java.util.concurrent.TimeUnit;
-import java.util.stream.Collectors;
 
 @RestController
 public class AlertController {
@@ -36,28 +40,31 @@ public class AlertController {
     private final Gson gson = new Gson();
     private final IAcsClient acsClient;
     private final Semaphore rateLimiter;
+    private final PhoneNumberService phoneNumberService;
+    private final TtsTemplateService ttsTemplateService;
+    private final CallRecordService callRecordService;
 
     @Value("${aliyun.voice.template-code}")
-    private String templateCode;
-
-    @Value("${aliyun.voice.called-numbers}")
-    private String calledNumbers;
+    private String defaultTemplateCode;
 
     @Value("${alert.webhook.api-key:}")
     private String apiKey;
 
-    public AlertController(IAcsClient acsClient, Semaphore rateLimiter) {
+    public AlertController(IAcsClient acsClient, Semaphore rateLimiter,
+                           PhoneNumberService phoneNumberService,
+                           TtsTemplateService ttsTemplateService,
+                           CallRecordService callRecordService) {
         this.acsClient = acsClient;
         this.rateLimiter = rateLimiter;
+        this.phoneNumberService = phoneNumberService;
+        this.ttsTemplateService = ttsTemplateService;
+        this.callRecordService = callRecordService;
     }
 
     @PostMapping("/alert")
     public String handleAlert(@RequestBody AlertManagerWebhookRequest request,
                               @RequestHeader(value = "X-API-Key", required = false) String requestApiKey) {
-        // 认证校验
         validateApiKey(requestApiKey);
-
-        // 速率限制
         acquireRateLimit();
 
         try {
@@ -66,13 +73,12 @@ public class AlertController {
                 return "Error: Invalid alert request";
             }
 
-            List<String> validNumbers = preparePhoneNumbers();
+            List<String> validNumbers = phoneNumberService.findEnabledNumbers();
             if (validNumbers.isEmpty()) {
                 logger.error("无有效号码");
                 return "Error: No valid numbers";
             }
 
-            // 处理所有告警，而非仅第一条
             StringBuilder results = new StringBuilder();
             for (AlertManagerWebhookRequest.Alert alert : request.getAlerts()) {
                 AlertManagerWebhookRequest.Labels labels = alert.getLabels();
@@ -83,7 +89,7 @@ public class AlertController {
 
                 logger.info("处理报警: {} [{}] - {}", alertname, severity, description);
 
-                String result = makePhoneCalls(validNumbers, alertname, description);
+                String result = makePhoneCalls(validNumbers, alertname, description, severity);
                 results.append(result).append("\n");
             }
             return results.toString().trim();
@@ -100,7 +106,7 @@ public class AlertController {
 
     private void validateApiKey(String requestApiKey) {
         if (apiKey == null || apiKey.isBlank()) {
-            return; // 未配置则跳过校验
+            return;
         }
         if (!apiKey.equals(requestApiKey)) {
             throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Invalid API Key");
@@ -121,41 +127,29 @@ public class AlertController {
     // ================ 核心业务方法 ================ //
 
     private boolean isValidRequest(AlertManagerWebhookRequest request) {
-        return request != null &&
-                request.getAlerts() != null &&
-                !request.getAlerts().isEmpty();
+        return request != null && request.getAlerts() != null && !request.getAlerts().isEmpty();
     }
 
     private String getAlertValue(String value, String defaultValue) {
-        return Objects.toString(value, defaultValue)
-                .replace("\"", "")
-                .replace("\\", "");
+        return Objects.toString(value, defaultValue).replace("\"", "").replace("\\", "");
     }
 
-    private List<String> preparePhoneNumbers() {
-        return Arrays.stream(calledNumbers.split(","))
-                .map(String::trim)
-                .filter(this::isValidPhoneNumber)
-                .distinct()
-                .limit(100)
-                .collect(Collectors.toList());
+    private String getTemplateCode() {
+        String code = ttsTemplateService.getActiveTemplateCode();
+        return code != null ? code : defaultTemplateCode;
     }
 
-    private boolean isValidPhoneNumber(String number) {
-        return number != null && number.matches("^1[3-9]\\d{9}$");
-    }
-
-    private String makePhoneCalls(List<String> numbers, String alertname, String description)
+    private String makePhoneCalls(List<String> numbers, String alertname, String description, String severity)
             throws ClientException {
         try {
             if (numbers.size() > 1) {
-                return batchCall(numbers, alertname, description);
+                return batchCall(numbers, alertname, description, severity);
             }
-            return singleCall(numbers.get(0), alertname, description);
+            return singleCall(numbers.get(0), alertname, description, severity);
         } catch (ClientException e) {
             if ("InvalidAction.NotFound".equals(e.getErrCode())) {
                 logger.warn("批量呼叫接口不可用，自动降级为单号码轮询");
-                return fallbackToSingleCalls(numbers, alertname, description);
+                return fallbackToSingleCalls(numbers, alertname, description, severity);
             }
             throw e;
         }
@@ -163,43 +157,87 @@ public class AlertController {
 
     // ================ 阿里云API调用方法 ================ //
 
-    private String singleCall(String number, String alertname, String description)
+    private String singleCall(String number, String alertname, String description, String severity)
             throws ClientException {
         CommonRequest request = buildCommonRequest(SINGLE_CALL_ACTION);
         request.putQueryParameter("CalledNumber", number);
-        request.putQueryParameter("TtsCode", templateCode);
+        request.putQueryParameter("TtsCode", getTemplateCode());
         request.putQueryParameter("TtsParam", buildTtsParam(alertname, description));
 
         CommonResponse response = acsClient.getCommonResponse(request);
         logger.info("单号码呼叫结果: {}", response.getData());
+
+        saveRecord(alertname, severity, description, number, response.getData());
         return response.getData();
     }
 
-    private String batchCall(List<String> numbers, String alertname, String description)
+    private String batchCall(List<String> numbers, String alertname, String description, String severity)
             throws ClientException {
         CommonRequest request = buildCommonRequest(BATCH_CALL_ACTION);
         request.putQueryParameter("CalledNumberJson", gson.toJson(numbers));
-        request.putQueryParameter("TtsCode", templateCode);
+        request.putQueryParameter("TtsCode", getTemplateCode());
         request.putQueryParameter("TtsParamJson", buildTtsParam(alertname, description));
         request.putQueryParameter("TaskName", "Alert_" + System.currentTimeMillis());
 
         CommonResponse response = acsClient.getCommonResponse(request);
         logger.info("批量呼叫结果: {}", response.getData());
+
+        for (String number : numbers) {
+            saveRecord(alertname, severity, description, number, response.getData());
+        }
         return response.getData();
     }
 
-    private String fallbackToSingleCalls(List<String> numbers, String alertname, String description) {
+    private String fallbackToSingleCalls(List<String> numbers, String alertname, String description, String severity) {
         StringBuilder results = new StringBuilder();
         for (String number : numbers) {
             try {
-                String result = singleCall(number, alertname, description);
+                String result = singleCall(number, alertname, description, severity);
                 results.append(number).append(": 成功 - ").append(result).append("\n");
             } catch (Exception e) {
                 results.append(number).append(": 失败 - ").append(e.getMessage()).append("\n");
                 logger.error("号码 {} 呼叫失败", number, e);
+                saveFailedRecord(alertname, severity, description, number, e.getMessage());
             }
         }
         return results.toString().trim();
+    }
+
+    // ================ 记录保存 ================ //
+
+    private void saveRecord(String alertname, String severity, String description, String number, String responseData) {
+        try {
+            CallRecord record = new CallRecord();
+            record.setAlertname(alertname);
+            record.setSeverity(severity);
+            record.setDescription(description);
+            record.setPhoneNumber(number);
+            record.setResponseJson(responseData);
+
+            JsonObject json = JsonParser.parseString(responseData).getAsJsonObject();
+            String code = json.has("Code") ? json.get("Code").getAsString() : "UNKNOWN";
+            record.setStatus("OK".equals(code) ? "SUCCESS" : "FAILED");
+            record.setCallId(json.has("CallId") ? json.get("CallId").getAsString() : null);
+
+            callRecordService.save(record);
+        } catch (Exception e) {
+            logger.warn("保存呼叫记录失败", e);
+        }
+    }
+
+    private void saveFailedRecord(String alertname, String severity, String description, String number, String errorMsg) {
+        try {
+            CallRecord record = new CallRecord();
+            record.setAlertname(alertname);
+            record.setSeverity(severity);
+            record.setDescription(description);
+            record.setPhoneNumber(number);
+            record.setStatus("FAILED");
+            record.setResponseJson(errorMsg);
+            callRecordService.save(record);
+        } catch (Exception e) {
+            logger.warn("保存失败记录失败", e);
+        }
     }
 
     // ================ 工具方法 ================ //

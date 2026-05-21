@@ -1,0 +1,111 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org">
+<head th:replace="~{layout :: head('仪表盘')}"></head>
+<body>
+<div class="d-flex">
+    <nav th:replace="~{layout :: nav('dashboard')}"></nav>
+    <div class="main-content flex-grow-1" style="margin-left: 220px; padding: 30px;">
+
+        <h4 class="mb-4">仪表盘</h4>
+
+        <!-- 统计卡片 -->
+        <div class="row mb-4">
+            <div class="col-md-4">
+                <div class="card stat-card primary">
+                    <div class="card-body">
+                        <div class="text-muted small">号码数量</div>
+                        <div class="fs-3 fw-bold" th:text="${phoneCount}">0</div>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-4">
+                <div class="card stat-card success">
+                    <div class="card-body">
+                        <div class="text-muted small">呼叫记录</div>
+                        <div class="fs-3 fw-bold" th:text="${callCount}">0</div>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-4">
+                <div class="card stat-card warning">
+                    <div class="card-body">
+                        <div class="text-muted small">TTS 模板</div>
+                        <div class="fs-3 fw-bold" th:text="${templateCount}">0</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 搜索 -->
+        <form class="row g-2 mb-3" method="get">
+            <div class="col-auto">
+                <input type="text" name="alertname" class="form-control" placeholder="搜索告警名称..."
+                       th:value="${alertname}">
+            </div>
+            <div class="col-auto">
+                <button class="btn btn-primary" type="submit">搜索</button>
+                <a href="/" class="btn btn-outline-secondary">重置</a>
+            </div>
+        </form>
+
+        <!-- 呼叫记录表格 -->
+        <div class="card">
+            <div class="card-body p-0">
+                <div class="table-responsive">
+                    <table class="table table-hover mb-0">
+                        <thead class="table-light">
+                        <tr>
+                            <th>时间</th>
+                            <th>告警名称</th>
+                            <th>级别</th>
+                            <th>描述</th>
+                            <th>号码</th>
+                            <th>状态</th>
+                            <th>CallId</th>
+                        </tr>
+                        </thead>
+                        <tbody>
+                        <tr th:each="r : ${records.content}">
+                            <td class="text-nowrap" th:text="${#temporals.format(r.createdAt, 'MM-dd HH:mm:ss')}"></td>
+                            <td th:text="${r.alertname}"></td>
+                            <td>
+                                <span class="badge" th:classappend="${r.severity == 'critical'} ? 'bg-danger' : (${r.severity == 'warning'} ? 'bg-warning text-dark' : 'bg-info')"
+                                      th:text="${r.severity}"></span>
+                            </td>
+                            <td th:text="${r.description}"></td>
+                            <td th:text="${r.phoneNumber}"></td>
+                            <td>
+                                <span class="badge" th:classappend="${r.status == 'SUCCESS'} ? 'badge-success' : 'badge-failed'"
+                                      th:text="${r.status}"></span>
+                            </td>
+                            <td class="text-muted small" th:text="${r.callId}"></td>
+                        </tr>
+                        <tr th:if="${#lists.isEmpty(records.content)}">
+                            <td colspan="7" class="text-center text-muted py-4">暂无记录</td>
+                        </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+
+        <!-- 分页 -->
+        <nav th:if="${records.totalPages > 1}" class="mt-3">
+            <ul class="pagination justify-content-center">
+                <li class="page-item" th:classappend="${records.first} ? 'disabled'">
+                    <a class="page-link" th:href="@{/(page=${records.number - 1}, alertname=${alertname})}">上一页</a>
+                </li>
+                <li class="page-item disabled">
+                    <span class="page-link" th:text="'第 ' + ${records.number + 1} + ' / ' + ${records.totalPages} + ' 页'"></span>
+                </li>
+                <li class="page-item" th:classappend="${records.last} ? 'disabled'">
+                    <a class="page-link" th:href="@{/(page=${records.number + 1}, alertname=${alertname})}">下一页</a>
+                </li>
+            </ul>
+        </nav>
+
+    </div>
+</div>
+<script th:replace="~{layout :: script}"></script>
+</body>
+</html>

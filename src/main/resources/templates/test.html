@@ -1,0 +1,56 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org">
+<head th:replace="~{layout :: head('测试面板')}"></head>
+<body>
+<div class="d-flex">
+    <nav th:replace="~{layout :: nav('test')}"></nav>
+    <div class="main-content flex-grow-1" style="margin-left: 220px; padding: 30px;">
+
+        <h4 class="mb-4">测试面板</h4>
+        <p class="text-muted">手动发送测试告警，验证呼叫是否正常。此操作会实际拨打电话。</p>
+
+        <div class="card mb-4">
+            <div class="card-body">
+                <form class="row g-3" method="post" action="/test">
+                    <div class="col-md-4">
+                        <label class="form-label">告警名称</label>
+                        <input type="text" name="alertname" class="form-control" value="TestAlert" required>
+                    </div>
+                    <div class="col-md-4">
+                        <label class="form-label">级别</label>
+                        <select name="severity" class="form-select">
+                            <option value="warning">warning</option>
+                            <option value="critical">critical</option>
+                            <option value="info">info</option>
+                        </select>
+                    </div>
+                    <div class="col-md-4">
+                        <label class="form-label">描述</label>
+                        <input type="text" name="description" class="form-control" value="这是一条测试告警">
+                    </div>
+                    <div class="col-12">
+                        <button type="submit" class="btn btn-danger"
+                                onclick="return confirm('确定发送测试告警？这将实际拨打电话。')">
+                            发送测试告警
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+
+        <!-- 结果展示 -->
+        <div th:if="${result}" class="card">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <span>呼叫结果</span>
+                <span class="badge bg-info" th:text="${alertname}"></span>
+            </div>
+            <div class="card-body">
+                <pre class="mb-0" style="white-space: pre-wrap; font-size: 0.9rem;" th:text="${result}"></pre>
+            </div>
+        </div>
+
+    </div>
+</div>
+<script th:replace="~{layout :: script}"></script>
+</body>
+</html>
