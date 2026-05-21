@@ -101,7 +101,7 @@ class AlertControllerTest {
         mockMvc.perform(post("/alert")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(gson.toJson(request)))
-                .andExpect(status().isOk())
+                .andExpect(status().isBadRequest())
                 .andExpect(content().string("Error: Invalid alert request"));
     }
 
@@ -110,7 +110,7 @@ class AlertControllerTest {
         mockMvc.perform(post("/alert")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"alerts\":null}"))
-                .andExpect(status().isOk())
+                .andExpect(status().isBadRequest())
                 .andExpect(content().string("Error: Invalid alert request"));
     }
 
@@ -123,7 +123,7 @@ class AlertControllerTest {
         mockMvc.perform(post("/alert")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(gson.toJson(request)))
-                .andExpect(status().isOk())
+                .andExpect(status().isServiceUnavailable())
                 .andExpect(content().string("Error: No valid numbers"));
     }
 

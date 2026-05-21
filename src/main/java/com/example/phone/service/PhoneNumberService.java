@@ -28,6 +28,9 @@ public class PhoneNumberService {
     }
 
     public PhoneNumber add(String number) {
+        if (number == null || !number.matches("^1[3-9]\\d{9}$")) {
+            throw new IllegalArgumentException("手机号格式不正确: " + number);
+        }
         repository.findByNumber(number).ifPresent(p -> {
             throw new IllegalArgumentException("号码已存在: " + number);
         });

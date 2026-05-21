@@ -17,6 +17,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestHeader;
@@ -62,7 +63,7 @@ public class AlertController {
     }
 
     @PostMapping("/alert")
-    public String handleAlert(@RequestBody AlertManagerWebhookRequest request,
+    public ResponseEntity<String> handleAlert(@RequestBody AlertManagerWebhookRequest request,
                               @RequestHeader(value = "X-API-Key", required = false) String requestApiKey) {
         validateApiKey(requestApiKey);
         acquireRateLimit();
@@ -70,13 +71,13 @@ public class AlertController {
         try {
             if (!isValidRequest(request)) {
                 logger.error("无效的报警请求");
-                return "Error: Invalid alert request";
+                return ResponseEntity.badRequest().body("Error: Invalid alert request");
             }
 
             List<String> validNumbers = phoneNumberService.findEnabledNumbers();
             if (validNumbers.isEmpty()) {
                 logger.error("无有效号码");
-                return "Error: No valid numbers";
+                return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE).body("Error: No valid numbers");
             }
 
             StringBuilder results = new StringBuilder();
@@ -92,13 +93,15 @@ public class AlertController {
                 String result = makePhoneCalls(validNumbers, alertname, description, severity);
                 results.append(result).append("\n");
             }
-            return results.toString().trim();
+            return ResponseEntity.ok(results.toString().trim());
         } catch (ClientException e) {
             logger.error("阿里云API调用失败", e);
-            return "Error: " + e.getMessage();
+            return ResponseEntity.status(HttpStatus.BAD_GATEWAY).body("Error: 语音服务调用失败");
         } catch (Exception e) {
             logger.error("处理报警失败", e);
-            return "Error: " + e.getMessage();
+            return ResponseEntity.internalServerError().body("Error: 处理报警失败");
+        } finally {
+            rateLimiter.release();
         }
     }
 
@@ -197,7 +200,7 @@ public class AlertController {
             } catch (Exception e) {
                 results.append(number).append(": 失败 - ").append(e.getMessage()).append("\n");
                 logger.error("号码 {} 呼叫失败", number, e);
-                saveFailedRecord(alertname, severity, description, number, e.getMessage());
+                saveRecord(alertname, severity, description, number, e.getMessage());
             }
         }
         return results.toString().trim();
@@ -214,29 +217,18 @@ public class AlertController {
             record.setPhoneNumber(number);
             record.setResponseJson(responseData);
 
-            JsonObject json = JsonParser.parseString(responseData).getAsJsonObject();
-            String code = json.has("Code") ? json.get("Code").getAsString() : "UNKNOWN";
-            record.setStatus("OK".equals(code) ? "SUCCESS" : "FAILED");
-            record.setCallId(json.has("CallId") ? json.get("CallId").getAsString() : null);
+            try {
+                JsonObject json = JsonParser.parseString(responseData).getAsJsonObject();
+                String code = json.has("Code") ? json.get("Code").getAsString() : "UNKNOWN";
+                record.setStatus("OK".equals(code) ? "SUCCESS" : "FAILED");
+                record.setCallId(json.has("CallId") ? json.get("CallId").getAsString() : null);
+            } catch (Exception ignored) {
+                record.setStatus("FAILED");
+            }
 
             callRecordService.save(record);
         } catch (Exception e) {
             logger.warn("保存呼叫记录失败", e);
-        }
-    }
-
-    private void saveFailedRecord(String alertname, String severity, String description, String number, String errorMsg) {
-        try {
-            CallRecord record = new CallRecord();
-            record.setAlertname(alertname);
-            record.setSeverity(severity);
-            record.setDescription(description);
-            record.setPhoneNumber(number);
-            record.setStatus("FAILED");
-            record.setResponseJson(errorMsg);
-            callRecordService.save(record);
-        } catch (Exception e) {
-            logger.warn("保存失败记录失败", e);
         }
     }
 
@@ -257,11 +249,7 @@ public class AlertController {
 
     // ================ 数据结构 ================ //
 
-    @Data
-    private static class TtsParam {
-        private final String alertname;
-        private final String description;
-    }
+    private record TtsParam(String alertname, String description) {}
 
     @Data
     public static class AlertManagerWebhookRequest {
