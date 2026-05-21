@@ -5,9 +5,10 @@ import org.slf4j.LoggerFactory;
 import org.springframework.ui.Model;
 import org.springframework.web.bind.annotation.ControllerAdvice;
 import org.springframework.web.bind.annotation.ExceptionHandler;
+import org.springframework.web.server.ResponseStatusException;
 import org.springframework.web.servlet.mvc.support.RedirectAttributes;
 
-@ControllerAdvice
+@ControllerAdvice(basePackages = "com.example.phone.controller")
 public class GlobalExceptionHandler {
 
     private static final Logger logger = LoggerFactory.getLogger(GlobalExceptionHandler.class);
@@ -16,6 +17,11 @@ public class GlobalExceptionHandler {
     public String handleIllegalArgument(IllegalArgumentException e, RedirectAttributes ra) {
         ra.addFlashAttribute("error", e.getMessage());
         return "redirect:/";
+    }
+
+    @ExceptionHandler(ResponseStatusException.class)
+    public void handleResponseStatus(ResponseStatusException e) throws ResponseStatusException {
+        throw e;
     }
 
     @ExceptionHandler(Exception.class)
