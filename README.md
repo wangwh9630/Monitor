@@ -40,6 +40,86 @@ java -jar target/phone-0.0.1-SNAPSHOT.jar
 ./mvnw.cmd test
 ```
 
+## Docker 部署
+
+### 本地 / 联网服务器部署
+
+```bash
+git clone https://github.com/wangwh9630/Monitor.git
+cd Monitor
+docker build -t monitor:latest .
+docker run -d \
+  --name monitor \
+  -p 8001:8001 \
+  -e ALIYUN_ACCESS_KEY_ID=你的Key \
+  -e ALIYUN_ACCESS_KEY_SECRET=你的Secret \
+  -e ALERT_WEBHOOK_API_KEY=你的密钥 \
+  --restart=always \
+  monitor:latest
+```
+
+### 离线服务器部署
+
+离线环境只需在服务器上安装 Docker，其他依赖全打包在镜像中。
+
+**第一步：在有网的机器上构建并导出镜像**
+
+```bash
+git clone https://github.com/wangwh9630/Monitor.git
+cd Monitor
+docker build -t monitor:latest .
+docker save monitor:latest -o monitor.tar
+```
+
+**第二步：将 `monitor.tar` 拷贝到离线服务器**（U 盘、内网传输等）
+
+**第三步：在离线服务器上导入并启动**
+
+```bash
+# 安装 Docker（唯一需要装的工具）
+yum install -y docker          # CentOS/RHEL
+# 或 apt install -y docker.io # Ubuntu/Debian
+systemctl start docker
+
+# 导入镜像
+docker load -i monitor.tar
+
+# 启动容器
+docker run -d \
+  --name monitor \
+  -p 8001:8001 \
+  -e ALIYUN_ACCESS_KEY_ID=你的Key \
+  -e ALIYUN_ACCESS_KEY_SECRET=你的Secret \
+  -e ALERT_WEBHOOK_API_KEY=你的密钥 \
+  --restart=always \
+  monitor:latest
+```
+
+### 数据持久化
+
+H2 数据库文件默认在容器内，容器删除后数据丢失。如需持久化：
+
+```bash
+docker run -d \
+  --name monitor \
+  -p 8001:8001 \
+  -e ALIYUN_ACCESS_KEY_ID=你的Key \
+  -e ALIYUN_ACCESS_KEY_SECRET=你的Secret \
+  -v /data/monitor:/app/data \
+  --restart=always \
+  monitor:latest
+```
+
+### 常用命令
+
+```bash
+docker logs -f monitor          # 查看日志
+docker restart monitor          # 重启服务
+docker stop monitor             # 停止服务
+docker rm monitor               # 删除容器（数据需提前持久化）
+docker exec -it monitor sh      # 进入容器
+```
+
 ## Web 管理页面
 
 启动后可通过浏览器访问以下页面：
