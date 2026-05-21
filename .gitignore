@@ -33,3 +33,6 @@ build/
 
 ### Claude ###
 .claude/
+
+### H2 Database ###
+data/
