@@ -19,18 +19,22 @@ public class DashboardController {
     private final PhoneNumberService phoneNumberService;
     private final TtsTemplateService ttsTemplateService;
 
+    private static final int MAX_PAGE_SIZE = 100;
+
     @GetMapping("/")
     public String dashboard(@RequestParam(required = false) String alertname,
                             @PageableDefault(size = 20) Pageable pageable,
                             Model model) {
+        int size = Math.min(pageable.getPageSize(), MAX_PAGE_SIZE);
+        int page = pageable.getPageNumber();
         if (alertname != null && !alertname.isBlank()) {
-            model.addAttribute("records", callRecordService.searchByAlertname(alertname, pageable.getPageNumber(), pageable.getPageSize()));
+            model.addAttribute("records", callRecordService.searchByAlertname(alertname, page, size));
         } else {
-            model.addAttribute("records", callRecordService.findRecent(pageable.getPageNumber(), pageable.getPageSize()));
+            model.addAttribute("records", callRecordService.findRecent(page, size));
         }
         model.addAttribute("phoneCount", phoneNumberService.count());
         model.addAttribute("callCount", callRecordService.count());
-        model.addAttribute("templateCount", ttsTemplateService.findAll().size());
+        model.addAttribute("templateCount", ttsTemplateService.count());
         model.addAttribute("alertname", alertname);
         return "dashboard";
     }

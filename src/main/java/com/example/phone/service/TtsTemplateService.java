@@ -45,4 +45,8 @@ public class TtsTemplateService {
     public void delete(Long id) {
         repository.deleteById(id);
     }
+
+    public long count() {
+        return repository.count();
+    }
 }

@@ -1,0 +1,17 @@
+<!DOCTYPE html>
+<html lang="zh-CN" xmlns:th="http://www.thymeleaf.org">
+<head th:replace="~{layout :: head('错误')}"></head>
+<body>
+<div class="d-flex">
+    <nav th:replace="~{layout :: nav('')}"></nav>
+    <div class="main-content flex-grow-1" style="margin-left: 220px; padding: 30px;">
+        <div class="text-center py-5">
+            <h2 class="text-danger mb-3">出错了</h2>
+            <p class="text-muted" th:text="${errorMessage} ?: '系统内部错误，请稍后重试'">系统内部错误</p>
+            <a href="/" class="btn btn-primary mt-3">返回仪表盘</a>
+        </div>
+    </div>
+</div>
+<script th:replace="~{layout :: script}"></script>
+</body>
+</html>

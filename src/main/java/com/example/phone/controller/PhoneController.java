@@ -33,15 +33,23 @@ public class PhoneController {
 
     @PostMapping("/toggle/{id}")
     public String toggle(@PathVariable Long id, RedirectAttributes ra) {
-        phoneNumberService.toggle(id);
-        ra.addFlashAttribute("msg", "状态已切换");
+        try {
+            phoneNumberService.toggle(id);
+            ra.addFlashAttribute("msg", "状态已切换");
+        } catch (IllegalArgumentException e) {
+            ra.addFlashAttribute("error", e.getMessage());
+        }
         return "redirect:/phones";
     }
 
     @PostMapping("/delete/{id}")
     public String delete(@PathVariable Long id, RedirectAttributes ra) {
-        phoneNumberService.delete(id);
-        ra.addFlashAttribute("msg", "已删除");
+        try {
+            phoneNumberService.delete(id);
+            ra.addFlashAttribute("msg", "已删除");
+        } catch (Exception e) {
+            ra.addFlashAttribute("error", "删除失败: " + e.getMessage());
+        }
         return "redirect:/phones";
     }
 }
